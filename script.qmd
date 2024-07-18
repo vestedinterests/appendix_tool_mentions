@@ -1,0 +1,256 @@
+---
+title: "Code to replicate analysis of: Tools of the Trade – When Are Software Tools Mentioned in Computational Text Analysis Research?"
+format:
+  html:
+    embed-resources: true
+knitr:
+  opts_chunk: 
+    collapse: true
+#authors: 
+#    - name: Marvin Stecker
+#      orcid: 0000-0001-8208-6669
+#    - name: Paul Balluff
+#      orcid: 0000-0001-9548-3225
+#    - name: Fabienne Lind
+#      orcid: 0000-0002-4978-9415
+#    - name: Celina Dinhopl
+ #   - name: Annie Waldherr
+ ##     orcid: 0000-0001-7488-9138
+ #   - name: Hajo G. Boomgaarden
+ #     orcid: 0000-0002-5260-1284
+keywords:
+  - Computational Text Analysis
+  - Research Software 
+  - Open Science
+  - Software Citation
+---
+
+# Preliminiaries: loading data and libraries
+```{r}
+#| output: false
+library(arrow)
+library(dplyr)
+library(tidyr)
+library(haven)
+library(knitr)
+```
+And here are two helper functions for later: 
+The first one checks whether the programming languages column contains a language one is looking for (e.g. is this written in Python?).
+The second combines our different measures of accessbility into an additive index.
+```{r}
+#| output: false
+check_programming_language <- function(column_of_interest, language_of_interest){
+  if (is.null(language_of_interest)){
+    if (length(unlist(column_of_interest)) == 0){
+      return(TRUE)
+    }
+    else {
+      return(FALSE)
+    }
+  }
+  for (language in unlist(column_of_interest)){
+    if (language == language_of_interest){
+      return(TRUE)
+    }
+  }
+  return(FALSE)
+}
+
+build_accessible_index <- function(input_data){
+  value = 0
+  if (input_data$dummy_doi){
+    value = value+1
+  }
+  if (input_data$dummy_materials){
+    value = value+1
+  }
+  if((input_data$dummy_cran) | (input_data$dummy_pypi)|  (input_data$dummy_github)){
+    value = value+1
+  }
+  if (input_data$graphical_user_interface){
+    value = value+1
+  }
+  return(value)
+}
+```
+```{r}
+articles <- read_feather("articles.feather")
+
+tools <- read_feather("tools.feather") %>% 
+  rowwise() %>%
+  mutate(
+    dummy_python = check_programming_language(programming_languages, 
+                                              language_of_interest = "python"),
+    dummy_r = check_programming_language(programming_languages, 
+                                         language_of_interest = "r"),
+    dummy_nolang = check_programming_language(programming_languages, 
+                                              language_of_interest = NULL),
+    # some github links are spelled as "quanteda/quanteda/" in Meteor
+    github = sub("\\/$", "", github)) %>%
+  mutate(
+    open_source = case_when(
+      open_source == "yes" ~ TRUE,
+      open_source == "no" ~ FALSE,
+      TRUE ~ FALSE
+    ),
+    dummy_doi = case_when(
+      is.na(doi) ~ FALSE,
+      !is.na(doi) ~ TRUE,
+      TRUE ~ FALSE
+    ),
+    dummy_github = case_when(
+      is.na(github) ~ FALSE,
+      !is.na(github) ~ TRUE,
+      TRUE ~ FALSE
+    ),
+    dummy_cran = case_when(
+      is.na(cran) ~ FALSE,
+      !is.na(cran) ~ TRUE,
+      TRUE ~ FALSE
+    ),
+    dummy_pypi = case_when(
+      is.na(pypi) ~ FALSE,
+      !is.na(pypi) ~ TRUE,
+      TRUE ~ FALSE
+    ),
+    dummy_materials = case_when(
+      !is.null(materials) ~ TRUE,
+      TRUE ~ FALSE
+    ),
+   index_accessible = build_accessible_index(.data)
+  )
+```
+
+This is the shape of the article data: 
+```{r}
+kable(head(articles))
+```
+
+and of the tool data (without kable, as the fields are too wide): 
+```{r}
+head(tools)
+```
+
+# Descriptive Tables 
+
+Proportion of articles per year and the reporting of software tools
+```{r}
+articles %>%
+  group_by(year) %>%
+  mutate(articles_per_year = n()) %>%
+  separate_rows(tool_ids, sep=",\\s*") %>%
+  reframe("Publications" = articles_per_year,
+          "Percentage Naming Tools"  = (articles_per_year - sum(is.na(tool_ids)))/articles_per_year*100,
+            "Tools named" = n(),
+            "Tools per publication" = n()/articles_per_year,
+            "Tools per publication which has tools" = n()/(articles_per_year - sum(is.na(tool_ids)))
+          ) %>%
+  distinct() %>% 
+  kable()
+```
+
+Comparison of journal reporting trends for the top communication science journals
+```{r}
+articles %>%
+  # exchange this filter to have all journals, or to focus on any other discipline
+  filter(top20_com== 1) %>%
+  group_by(journal) %>%
+  mutate(n_per_journals = n()) %>% 
+  #filter(n_per_journals > 4) %>%
+  separate_rows(tool_ids, sep=",\\s*") %>%
+  reframe("Number of Articles" = n_per_journals, 
+            "Percentage Naming Tools"  =((n_per_journals - sum(is.na(tool_ids)))/n_per_journals)) %>%
+  unique()
+```
+
+Most frequently reported software tools
+```{r}
+tools %>% 
+  arrange(desc(n)) %>% 
+  reframe("Software Tool Name" = name, 
+        "Number of mentions" = n) %>% 
+  head() %>% 
+  kable()
+```
+
+Distribution of accessibility of software tools
+
+```{r}
+tools %>%
+  group_by(index_accessible) %>%
+  summarise(Percentage = n() / nrow(tools) * 100,
+  Mean = mean(n),
+  SD = sd(n)) %>% 
+  kable()
+```
+
+# Hypothesis Testing 
+
+Create a dichotomous variable whether an article mentions tools or not, and combine both codings of validation into one.
+```{r}
+articles <- articles %>% 
+  mutate(tools_boolean = case_when(
+      number_tools > 0 ~ TRUE,
+      number_tools == 0 ~ FALSE,
+    TRUE ~ FALSE),
+    validation_disc_boolean = case_when(
+      valid1 > 0 ~ TRUE,
+      valid1 == 0 ~ FALSE,
+      TRUE ~ FALSE),
+    validation_data_boolean = case_when(
+      valid2 > 0 ~ TRUE,
+      valid2 == 0 ~ FALSE,
+      TRUE ~ FALSE),
+    validation_any_boolean = case_when(
+      validation_disc_boolean | validation_data_boolean ~ TRUE, 
+      TRUE ~ FALSE)
+    )
+```
+
+*H1 The more recent a journal article was published, the more likely it is to mention software tools used.*
+
+```{r}
+chisq.test(articles$tools_boolean, articles$year)
+```
+
+*H2: There are differences between disciplines regarding whether software tools are mentioned.*
+
+```{r}
+chisq.test(articles$tools_boolean, articles$top20_com)
+chisq.test(articles$tools_boolean, articles$top20_pol)
+chisq.test(articles$tools_boolean, articles$top20_psychplus)
+chisq.test(articles$tools_boolean, articles$top20_socplus)
+```
+
+*H3: There are differences between journals within the same discipline regarding whether software tools are mentioned.*
+
+```{r}
+disciplines = c("top20_com", "top20_pol", "top20_socplus", 
+                "top20_psychplus", "top20_soc")
+for (discipline in disciplines){
+  print(discipline)
+  only_one_discipline_articles <- articles %>%  
+    dplyr::filter(haven::as_factor(.data[[discipline]]) == "yes")
+  print(chisq.test(only_one_discipline_articles$tools_boolean, 
+                  only_one_discipline_articles$journal))
+}
+```
+
+*H4: Journal articles that discuss or demonstrate the validity of their methodology are more likely to report the associated software tools.*
+
+```{r}
+chisq.test(articles$tools_boolean, articles$validation_any_boolean)
+```
+
+*H5: Increased software tool accessibility increases the frequency of its mentions in journal articles.*
+
+```{r}
+cor.test(tools$index_accessible, tools$n, method = "kendall")
+```
+
+*H6: There is a positive correlation between the development activity of a software tool and the number of journal article mentions of a software tool.*
+
+```{r}
+cor.test(tools$issues_relation_closed_open, tools$n, method = "kendall")
+cor.test(tools$mean_commits, tools$n, method = "kendall")
+```
