@@ -21,6 +21,8 @@ library(dplyr)
 library(tidyr)
 library(haven)
 library(knitr)
+library(scales)
+library(xtable)
 ```
 And here are two helper functions for later: 
 The first one checks whether the programming languages column contains a language one is looking for (e.g. is this written in Python?).
@@ -144,14 +146,22 @@ Comparison of journal reporting trends for the top communication science journal
 ```{r}
 articles %>%
   # exchange this filter to have all journals, or to focus on any other discipline
-  filter(top20_com== 1) %>%
+  filter(top20_soc == 1) %>%
   group_by(journal) %>%
   mutate(n_per_journals = n()) %>% 
-  #filter(n_per_journals > 4) %>%
-  separate_rows(tool_ids, sep=",\\s*") %>%
+  filter(n_per_journals > 4)  %>%
   reframe("Number of Articles" = n_per_journals, 
-            "Percentage Naming Tools"  =((n_per_journals - sum(is.na(tool_ids)))/n_per_journals)) %>%
-  unique()
+            "Percentage Naming Tools"  =round(((n_per_journals - sum(is.na(tool_ids)))/n_per_journals), digits = 2),
+            "Percentage Reporting/Discussing Validation" = sum(validation_any_boolean, na.rm = TRUE)/n_per_journals) %>% 
+  arrange(desc(`Percentage Naming Tools`)) %>% 
+  distinct() %>% 
+  mutate(
+    "journal" = haven::as_factor(journal),
+    "Percentage Naming Tools" = percent(`Percentage Naming Tools`),
+    "Percentage Reporting/Discussing Validation" = percent(`Percentage Reporting/Discussing Validation`)
+  ) %>% 
+  select(journal, "Percentage Naming Tools", "Percentage Reporting/Discussing Validation", "Number of Articles")  %>%
+  xtable()
 ```
 
 Most frequently reported software tools
@@ -204,7 +214,7 @@ articles <- articles %>%
 chisq.test(articles$tools_boolean, articles$year)
 ```
 
-*H2: There are differences between disciplines regarding whether software tools are mentioned.*
+*H2a: There are differences between disciplines regarding whether software tools are mentioned.*
 
 ```{r}
 chisq.test(articles$tools_boolean, articles$top20_com)
@@ -213,7 +223,7 @@ chisq.test(articles$tools_boolean, articles$top20_psychplus)
 chisq.test(articles$tools_boolean, articles$top20_socplus)
 ```
 
-*H3: There are differences between journals within the same discipline regarding whether software tools are mentioned.*
+*H2b: There are differences between journals within the same discipline regarding whether software tools are mentioned.*
 
 ```{r}
 disciplines = c("top20_com", "top20_pol", "top20_socplus", 
@@ -227,19 +237,32 @@ for (discipline in disciplines){
 }
 ```
 
-*H4: Journal articles that discuss or demonstrate the validity of their methodology are more likely to report the associated software tools.*
+*H3: Journal articles that discuss or demonstrate the validity of their methodology are more likely to report the associated software tools.*
 
 ```{r}
 chisq.test(articles$tools_boolean, articles$validation_any_boolean)
 ```
 
-*H5: Increased software tool accessibility increases the frequency of its mentions in journal articles.*
+*Appendix for H3: Journals that have a higher share of articles discussing validity of their methodology have a higher average share of articles mentioneing their associated software tools.*
+
+```{r}
+articles_corelation_h4 <- articles %>%
+  group_by(journal) %>%
+  mutate(no_articles = n()) %>% 
+  mutate("avg_naming_tools"  =((no_articles - sum(is.na(tool_ids)))/no_articles),
+            "avg_naming_valid" = sum(validation_any_boolean, na.rm = TRUE)/no_articles) %>% 
+  select(journal, no_articles, avg_naming_tools, avg_naming_valid) %>% 
+  distinct() 
+cor.test(articles_corelation_h4$avg_naming_tools, articles_corelation_h4$avg_naming_valid, method = "kendall")
+```
+
+*H4: Increased software tool accessibility increases the frequency of its mentions in journal articles.*
 
 ```{r}
 cor.test(tools$index_accessible, tools$n, method = "kendall")
 ```
 
-*H6: There is a positive correlation between the development activity of a software tool and the number of journal article mentions of a software tool.*
+*H5: There is a positive correlation between the development activity of a software tool and the number of journal article mentions of a software tool.*
 
 ```{r}
 cor.test(tools$issues_relation_closed_open, tools$n, method = "kendall")
