@@ -114,6 +114,27 @@ tools <- read_feather("tools.feather") %>%
   )
 ```
 
+Create a dichotomous variable whether an article mentions tools or not, and combine both codings of validation into one.
+```{r}
+articles <- articles %>% 
+  mutate(tools_boolean = case_when(
+      number_tools > 0 ~ TRUE,
+      number_tools == 0 ~ FALSE,
+    TRUE ~ FALSE),
+    validation_disc_boolean = case_when(
+      valid1 > 0 ~ TRUE,
+      valid1 == 0 ~ FALSE,
+      TRUE ~ FALSE),
+    validation_data_boolean = case_when(
+      valid2 > 0 ~ TRUE,
+      valid2 == 0 ~ FALSE,
+      TRUE ~ FALSE),
+    validation_any_boolean = case_when(
+      validation_disc_boolean | validation_data_boolean ~ TRUE, 
+      TRUE ~ FALSE)
+    )
+```
+
 This is the shape of the article data: 
 ```{r}
 kable(head(articles))
@@ -146,7 +167,7 @@ Comparison of journal reporting trends for the top communication science journal
 ```{r}
 articles %>%
   # exchange this filter to have all journals, or to focus on any other discipline
-  filter(top20_soc == 1) %>%
+  filter(top20_com == 1) %>%
   group_by(journal) %>%
   mutate(n_per_journals = n()) %>% 
   filter(n_per_journals > 4)  %>%
@@ -160,8 +181,9 @@ articles %>%
     "Percentage Naming Tools" = percent(`Percentage Naming Tools`),
     "Percentage Reporting/Discussing Validation" = percent(`Percentage Reporting/Discussing Validation`)
   ) %>% 
-  select(journal, "Percentage Naming Tools", "Percentage Reporting/Discussing Validation", "Number of Articles")  %>%
-  xtable()
+  select(journal, "Percentage Naming Tools", "Percentage Reporting/Discussing Validation", "Number of Articles") %>% 
+  kable()  #%>%
+  #xtable()
 ```
 
 Most frequently reported software tools
@@ -187,27 +209,6 @@ tools %>%
 
 # Hypothesis Testing 
 
-Create a dichotomous variable whether an article mentions tools or not, and combine both codings of validation into one.
-```{r}
-articles <- articles %>% 
-  mutate(tools_boolean = case_when(
-      number_tools > 0 ~ TRUE,
-      number_tools == 0 ~ FALSE,
-    TRUE ~ FALSE),
-    validation_disc_boolean = case_when(
-      valid1 > 0 ~ TRUE,
-      valid1 == 0 ~ FALSE,
-      TRUE ~ FALSE),
-    validation_data_boolean = case_when(
-      valid2 > 0 ~ TRUE,
-      valid2 == 0 ~ FALSE,
-      TRUE ~ FALSE),
-    validation_any_boolean = case_when(
-      validation_disc_boolean | validation_data_boolean ~ TRUE, 
-      TRUE ~ FALSE)
-    )
-```
-
 *H1 The more recent a journal article was published, the more likely it is to mention software tools used.*
 
 ```{r}
@@ -226,7 +227,7 @@ chisq.test(articles$tools_boolean, articles$top20_socplus)
 *H2b: There are differences between journals within the same discipline regarding whether software tools are mentioned.*
 
 ```{r}
-disciplines = c("top20_com", "top20_pol", "top20_socplus", 
+disciplines = c("top20_com", "top20_pol", 
                 "top20_psychplus", "top20_soc")
 for (discipline in disciplines){
   print(discipline)
