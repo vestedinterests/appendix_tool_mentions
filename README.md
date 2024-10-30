@@ -1,1 +1,1 @@
-# appendix_tool_mentions
+This repository contains the replication script for the following publication: 
